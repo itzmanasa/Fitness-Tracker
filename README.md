@@ -12,7 +12,11 @@ Next.js 16 (App Router, frontend/)  --HTTP + JWT-->  Express 5 API (backend/)  -
 ```
 - **Frontend:** Next.js App Router. Each screen is a route in `frontend/src/app/`; signed-in screens share the layout in `frontend/src/app/(app)/layout.jsx`.
 - **Backend/API:** Express route handlers in `backend/src/routes` and `backend/src/controllers`. Every route except sign-in/sign-up needs a JWT; admin routes also check the role in MySQL.
-- **Configuration:** all credentials and secrets come from `.env` (git-ignored). The backend refuses to start if `JWT_SECRET`, `DB_USER` or `DB_PASSWORD` is missing.
+- **Configuration:** all credentials and secrets come from `.env` (git-ignored). The backend refuses to start if `JWT_SECRET`, `DB_USER`, `DB_PASSWORD` or `REDIS_MEMBER_PASSWORD` is missing. Backend and simulator Redis clients authenticate as `REDIS_USERNAME` (default `ft_redis_member`) using `REDIS_MEMBER_PASSWORD`.
+
+### Redis ACL status
+
+The backend and wearable simulator use the `ft_redis_member` ACL account. It is limited to the `fittrack:journal:*`, `fittrack:photos:*`, `fittrack:sensors:*` and `fittrack:activity:*` key patterns and the Redis commands used by those features. Its ACL is persisted in the active Redis configuration. The Redis `default` account remains enabled, passwordless and unrestricted as a temporary recovery path; restricting it is pending explicit approval. Do not treat that default account as a production-safe configuration.
 
 - **Demo and DBMS documentation:** [`DEMO_GUIDE.md`](DEMO_GUIDE.md) (commands and expected results)
 - **ER diagram and relational schema:** [`database/docs/`](database/docs)

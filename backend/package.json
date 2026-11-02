@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
+    "verify:redis-acl": "node scripts/verifyRedisAcl.js",
     "test": "node --test"
   },
   "keywords": [],

@@ -119,10 +119,21 @@ The commands are plain lines, so you can paste them one by one.
 
 Redis role-based access (item 9b, Git Bash):
 ```
-export REDIS_MEMBER_PASSWORD='the value from your .env'
+read -rsp "Redis member password: " REDIS_MEMBER_PASSWORD
+export REDIS_MEMBER_PASSWORD
+printf '\n'
 bash database/demo/09_redis_acl.sh
+unset REDIS_MEMBER_PASSWORD
 ```
-The member user can write its own journal keys. It gets `NOPERM` on other keys and on `FLUSHALL`/`KEYS`.
+The member user can access the FitTrack key namespaces and commands needed by the app; other key namespaces and dangerous commands are denied. The script persists the ACL in the active Redis configuration with `CONFIG REWRITE`. The backend and simulator use `REDIS_USERNAME` and `REDIS_MEMBER_PASSWORD` from `.env`.
+
+Manual member authentication check:
+```
+redis-cli -h 127.0.0.1 -p 6379 --user ft_redis_member --askpass PING
+```
+`--askpass` prompts for a password and ignores `REDISCLI_AUTH`; it does not load `.env`. For scripted checks, provide `REDISCLI_AUTH` through a protected process environment and omit `--askpass`. Never put a password directly in a command line.
+
+The Redis `default` account is still enabled, passwordless and unrestricted as a temporary recovery path. Restricting it is pending explicit approval; it is not a production-safe configuration.
 
 ### Item 10 - Modifications
 The database is rebuilt in one command (`node database\setup_mysql.js`). Each part is a separate file, so changes are quick to make.
