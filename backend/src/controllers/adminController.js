@@ -1,4 +1,5 @@
-const pool = require('../config/mysql');
+const pool = require('../config/mysqlAdmin');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 // Admin-only endpoints. Every route is protected by authMiddleware + requireRole('admin'),
 // and the role change itself is enforced again INSIDE the database by sp_change_role.
@@ -14,7 +15,7 @@ exports.listUsers = async (req, res) => {
         users.forEach((u) => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
         res.json({ total: users.length, roleCounts, users });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'admin.listUsers');
     }
 };
 
@@ -29,8 +30,10 @@ exports.changeRole = async (req, res) => {
         res.json({ message: 'Role updated', user: rows[0] });
     } catch (error) {
         // errors raised by SIGNAL inside the procedure carry SQLSTATE 45000
-        const status = error.sqlState === '45000' ? 400 : 500;
-        res.status(status).json({ message: error.sqlState === '45000' ? error.sqlMessage : 'Server error' });
+        if (error.sqlState === '45000') {
+            return res.status(400).json({ message: 'The requested role change is not permitted.' });
+        }
+        respondWithServerError(res, error, 'admin.changeRole');
     }
 };
 
@@ -52,6 +55,6 @@ exports.activity = async (req, res) => {
         );
         res.json({ log, roleChanges });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'admin.activity');
     }
 };

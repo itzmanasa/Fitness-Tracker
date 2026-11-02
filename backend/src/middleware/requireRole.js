@@ -1,4 +1,5 @@
 const pool = require('../config/mysql');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 // Application-level RBAC. The role is read from the database on every request,
 // so a demoted admin loses access immediately (the token alone is not trusted for roles).
@@ -13,7 +14,7 @@ module.exports = function requireRole(...allowed) {
             req.user.role = rows[0].role;
             next();
         } catch (error) {
-            res.status(500).json({ message: 'Server error', error: error.message });
+            respondWithServerError(res, error, 'role authorization');
         }
     };
 };

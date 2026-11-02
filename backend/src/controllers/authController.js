@@ -1,6 +1,8 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/mysql');
+const credentialPool = require('../config/mysqlCredential');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '..', '.env') });
 
@@ -123,7 +125,7 @@ exports.register = async (req, res) => {
     const { errors, profile } = validateProfile(body);
     if (errors.length) return res.status(400).json({ message: errors.join(' ') });
 
-    const conn = await pool.getConnection();
+    const conn = await credentialPool.getConnection();
     try {
         const [existing] = await conn.query('SELECT id FROM users WHERE email = ?', [mail]);
         if (existing.length > 0) {
@@ -149,7 +151,7 @@ exports.register = async (req, res) => {
     } catch (error) {
         await conn.rollback().catch(() => {});
         if (error.code === 'ER_DUP_ENTRY') return res.status(400).json({ message: 'User already exists' });
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.register');
     } finally {
         conn.release();
     }
@@ -163,7 +165,10 @@ exports.login = async (req, res) => {
             return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [String(email).trim().toLowerCase()]);
+        const [users] = await credentialPool.query(
+            'SELECT id, email, password_hash FROM users WHERE email = ?',
+            [String(email).trim().toLowerCase()]
+        );
         if (users.length === 0) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -174,7 +179,7 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
+        await credentialPool.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
 
         res.json({
             message: 'Login successful',
@@ -182,7 +187,7 @@ exports.login = async (req, res) => {
             user: await loadUser(user.id)
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.login');
     }
 };
 
@@ -193,7 +198,7 @@ exports.me = async (req, res) => {
         if (!user) return res.status(404).json({ message: 'User not found' });
         res.json(user);
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.me');
     }
 };
 
@@ -214,7 +219,7 @@ exports.updateMe = async (req, res) => {
         res.json(await loadUser(req.user.id));
     } catch (error) {
         await conn.rollback().catch(() => {});
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.updateMe');
     } finally {
         conn.release();
     }
@@ -230,25 +235,25 @@ exports.changePassword = async (req, res) => {
         const pwError = validatePassword(new_password);
         if (pwError) return res.status(400).json({ message: pwError });
 
-        const [rows] = await pool.query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+        const [rows] = await credentialPool.query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
         if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
         if (!(await bcrypt.compare(current_password, rows[0].password_hash))) {
             return res.status(400).json({ message: 'Current password is incorrect.' });
         }
         const hash = await bcrypt.hash(new_password, 10);
-        await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.user.id]);
+        await credentialPool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.user.id]);
         res.json({ message: 'Password updated' });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.changePassword');
     }
 };
 
 // Demo login: signs the demo user in server-side so no password has to live in frontend code.
-// Disable with DEMO_LOGIN_ENABLED=false in .env. Demo account email: DEMO_USER_EMAIL (default demo@fittrack.com).
+// Explicitly enable with DEMO_LOGIN_ENABLED=true. Demo email defaults to demo@fittrack.com.
 exports.demoLogin = async (req, res) => {
     try {
-        if (process.env.DEMO_LOGIN_ENABLED === 'false') {
-            return res.status(403).json({ message: 'Demo login is disabled' });
+        if (process.env.DEMO_LOGIN_ENABLED !== 'true') {
+            return res.status(403).json({ message: 'Demo sign-in is disabled. Enable DEMO_LOGIN_ENABLED=true on the backend to use it.' });
         }
         const email = process.env.DEMO_USER_EMAIL || 'demo@fittrack.com';
         const [users] = await pool.query('SELECT id, email FROM users WHERE email = ?', [email]);
@@ -262,6 +267,6 @@ exports.demoLogin = async (req, res) => {
             user: await loadUser(users[0].id)
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        respondWithServerError(res, error, 'auth.demoLogin');
     }
 };

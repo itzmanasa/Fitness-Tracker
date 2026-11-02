@@ -1,16 +1,14 @@
-const pool = require('./mysql');
-
 /**
- * Idempotent schema upgrade, run on backend start (and by `node database/migrate.js`).
+ * Idempotent schema upgrade, run only by the explicit migration command.
  * Brings an existing fittrack_db up to date without touching existing data:
  *   - users.last_login_at              (column)
  *   - users.role                       (column: admin | member, RBAC)
  *   - user_profiles                    (1:1 table with the user's personal details)
  *   - activity_log, role_audit_log     (tables written by triggers / sp_change_role)
- * Triggers, procedures and views are created by database/programmability.sql
- * (run by database/setup_mysql.js or database/migrate.js).
+ * Stored objects are created separately by the reviewed bootstrap DBA procedure;
+ * the migration runner does not drop or recreate them.
  */
-async function columnExists(table, column) {
+async function columnExists(pool, table, column) {
     const [rows] = await pool.query(
         `SELECT COUNT(*) AS n FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
@@ -19,13 +17,14 @@ async function columnExists(table, column) {
     return rows[0].n > 0;
 }
 
-async function ensureSchema() {
-    if (!(await columnExists('users', 'last_login_at'))) {
+async function ensureSchema(pool) {
+    if (!pool) throw new Error('A migration connection is required to verify or upgrade the schema.');
+    if (!(await columnExists(pool, 'users', 'last_login_at'))) {
         await pool.query('ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP NULL DEFAULT NULL');
         console.log('[schema] Added users.last_login_at');
     }
 
-    if (!(await columnExists('users', 'role'))) {
+    if (!(await columnExists(pool, 'users', 'role'))) {
         await pool.query("ALTER TABLE users ADD COLUMN role ENUM('admin','member') NOT NULL DEFAULT 'member'");
         console.log('[schema] Added users.role');
     }

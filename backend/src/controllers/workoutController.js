@@ -1,4 +1,5 @@
 const pool = require('../config/mysql');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 const toInt = (v, fallback = null) => {
     const n = parseInt(v, 10);
@@ -38,7 +39,7 @@ exports.getExercises = async (req, res) => {
         const [rows] = await pool.query('SELECT * FROM exercises');
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.getExercises');
     }
 };
 
@@ -56,7 +57,7 @@ exports.getPlans = async (req, res) => {
         );
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.getPlans');
     }
 };
 
@@ -75,7 +76,7 @@ exports.getPlan = async (req, res) => {
         );
         res.json({ ...plans[0], exercises });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.getPlan');
     }
 };
 
@@ -97,7 +98,7 @@ exports.createPlan = async (req, res) => {
         res.status(201).json({ id: result.insertId, name, description, exercise_count: exercises.length });
     } catch (error) {
         await conn.rollback();
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.createPlan');
     } finally {
         conn.release();
     }
@@ -128,7 +129,7 @@ exports.updatePlan = async (req, res) => {
         res.json({ id: Number(req.params.id), name, description });
     } catch (error) {
         await conn.rollback();
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.updatePlan');
     } finally {
         conn.release();
     }
@@ -140,7 +141,7 @@ exports.deletePlan = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Plan not found' });
         res.json({ message: 'Plan deleted' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.deletePlan');
     }
 };
 
@@ -172,7 +173,7 @@ exports.getSessions = async (req, res) => {
         `, params);
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.getSessions');
     }
 };
 
@@ -193,7 +194,7 @@ exports.getSession = async (req, res) => {
             ORDER BY ws.exercise_id, ws.set_number`, [req.params.id]);
         res.json({ ...sessions[0], sets });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.getSession');
     }
 };
 
@@ -249,20 +250,34 @@ exports.createSet = async (req, res) => {
         if (error.sqlState === '45000' || /session is already finished/i.test(error.message || '')) {
             return res.status(409).json({ error: 'Session is already finished' });
         }
-        return res.status(500).json({ error: error.message });
+        return respondWithServerError(res, error, 'workouts.createSet');
     }
 };
 
 exports.createSession = async (req, res) => {
-    const { plan_id, notes } = req.body;
+    const { plan_id, notes } = req.body || {};
+    let selectedPlanId = null;
+    if (plan_id !== undefined && plan_id !== null && plan_id !== '') {
+        selectedPlanId = Number(plan_id);
+        if (!Number.isSafeInteger(selectedPlanId) || selectedPlanId <= 0) {
+            return res.status(400).json({ error: 'Invalid workout plan.' });
+        }
+    }
     try {
+        if (selectedPlanId !== null) {
+            const [plans] = await pool.query(
+                'SELECT id FROM workout_plans WHERE id = ? AND user_id = ?',
+                [selectedPlanId, req.user.id]
+            );
+            if (plans.length === 0) return res.status(404).json({ error: 'Workout plan not found.' });
+        }
         const [result] = await pool.query(
             'INSERT INTO workout_sessions (user_id, plan_id, start_time, notes) VALUES (?, ?, NOW(), ?)',
-            [req.user.id, plan_id || null, notes || '']
+            [req.user.id, selectedPlanId, notes || '']
         );
         res.status(201).json({ id: result.insertId, message: 'Session started' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.createSession');
     }
 };
 
@@ -276,6 +291,6 @@ exports.endSession = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Session not found or already finished' });
         res.json({ message: 'Session finished' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'workouts.endSession');
     }
 };

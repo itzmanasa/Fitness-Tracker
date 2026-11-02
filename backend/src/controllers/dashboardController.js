@@ -1,5 +1,6 @@
 const pool = require('../config/mysql');
 const memuraiClient = require('../config/memurai');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 exports.getDashboardData = async (req, res) => {
     try {
@@ -40,6 +41,6 @@ exports.getDashboardData = async (req, res) => {
         });
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'dashboard.getDashboardData');
     }
 };

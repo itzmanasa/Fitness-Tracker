@@ -5,13 +5,19 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const INTERVAL_MS = 5000;          // one reading per user every 5 seconds
 const USER_REFRESH_MS = 30000;     // re-read the list of registered users from MySQL
-const FALLBACK_USER_IDS = [1];     // used only if MySQL cannot be reached
+
+const safeErrorCode = (error) => typeof error?.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(error.code)
+    ? error.code
+    : 'UNAVAILABLE';
 
 async function runSimulator() {
     console.log('Starting Wearable Simulator...');
 
     if (!process.env.REDIS_MEMBER_PASSWORD) {
         throw new Error('REDIS_MEMBER_PASSWORD is required for the Redis member connection');
+    }
+    if (!process.env.DB_RUNTIME_USER || !process.env.DB_RUNTIME_PASSWORD) {
+        throw new Error('DB_RUNTIME_USER and DB_RUNTIME_PASSWORD are required for the MySQL member connection');
     }
 
     const client = redis.createClient({
@@ -23,30 +29,33 @@ async function runSimulator() {
             port: process.env.REDIS_PORT || 6379
         }
     });
-    client.on('error', (err) => console.error('Memurai Client Error', err));
+    client.on('error', (err) => console.error('[SIMULATOR] Redis client error', safeErrorCode(err)));
     await client.connect();
 
     // MySQL is only used to learn WHICH users exist (so every registered account gets a simulated wearable)
     const pool = mysql.createPool({
         host: process.env.DB_HOST || '127.0.0.1',
         port: process.env.DB_PORT || 3306,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
+        user: process.env.DB_RUNTIME_USER,
+        password: process.env.DB_RUNTIME_PASSWORD,
         database: process.env.DB_NAME || 'fittrack_db',
         connectionLimit: 2
     });
 
-    let userIds = FALLBACK_USER_IDS;
+    let userIds = [];
+    let userListReady = false;
     async function refreshUsers() {
         try {
             const [rows] = await pool.query('SELECT id FROM users ORDER BY id');
             const ids = rows.map((r) => r.id);
+            userListReady = true;
             if (ids.join() !== userIds.join()) {
                 console.log(`Simulating wearables for ${ids.length} user(s): ${ids.join(', ') || '(none)'}`);
             }
             userIds = ids;
         } catch (err) {
-            console.error('Could not read users from MySQL, keeping previous list:', err.message);
+            userListReady = false;
+            console.error(`[SIMULATOR] User list unavailable; readings paused (${safeErrorCode(err)}).`);
         }
     }
     await refreshUsers();
@@ -96,11 +105,12 @@ async function runSimulator() {
     }
 
     setInterval(async () => {
+        if (!userListReady) return;
         for (const userId of userIds) {
             try {
                 await sendReading(userId);
             } catch (error) {
-                console.error(`Simulator error (user ${userId}):`, error.message);
+                console.error(`[SIMULATOR] Reading write failed for user ${userId} (${safeErrorCode(error)}).`);
             }
         }
     }, INTERVAL_MS);
@@ -113,4 +123,7 @@ async function runSimulator() {
     });
 }
 
-runSimulator();
+runSimulator().catch((error) => {
+    console.error(`[SIMULATOR] Startup failed (${safeErrorCode(error)}).`);
+    process.exitCode = 1;
+});

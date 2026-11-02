@@ -1,31 +1,24 @@
-// Upgrades an EXISTING fittrack_db to the latest schema and stored programs. Safe to re-run.
-//   node database/migrate.js
-// (The backend also upgrades the tables/columns automatically on start.)
-const path = require('path');
-const mysql = require('mysql2/promise');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// Explicitly upgrades schema tables/columns only, using migration credentials.
+// Stored objects are not recreated here; that requires the separate DBA procedure.
+//   node database/migrate.js (uses database/.env.migration or process environment)
 const ensureSchema = require('../backend/src/config/ensureSchema');
-const pool = require('../backend/src/config/mysql');
-const { runSqlFile } = require('./sqlRunner');
+const pool = require('../backend/src/config/mysqlMigration');
 
 (async () => {
+    let conn;
     try {
-        await ensureSchema();
-        const conn = await mysql.createConnection({
-            host: process.env.DB_HOST || '127.0.0.1',
-            port: process.env.DB_PORT || 3306,
-            user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD,
-            database: process.env.DB_NAME || 'fittrack_db',
-            multipleStatements: false
-        });
-        await runSqlFile(conn, path.join(__dirname, 'programmability.sql'));
-        await conn.end();
-        console.log('Database schema and stored programs are up to date.');
+        for (const name of ['DB_MIGRATION_USER', 'DB_MIGRATION_PASSWORD']) {
+            if (!process.env[name]) throw new Error(`${name} must be supplied to the migration process.`);
+        }
+        conn = await pool.getConnection();
+        await conn.query("SET ROLE 'fittrack_migration'");
+        await ensureSchema(conn);
+        console.log('Database schema tables and columns are up to date. Stored objects were not changed.');
     } catch (e) {
         console.error('Migration failed:', e.message);
         process.exitCode = 1;
     } finally {
+        if (conn) conn.release();
         await pool.end();
     }
 })();

@@ -52,6 +52,32 @@ test('another user cannot log a set to the session', async () => withQueries(asy
     assert.equal(res.statusCode, 404);
 }));
 
+test('session creation rejects a plan owned by another user without inserting', async () => withQueries(async (mock) => {
+    const sqlCalls = [];
+    mock(async (sql, params) => {
+        sqlCalls.push({ sql, params });
+        return [[]];
+    });
+    const res = await invoke(controller.createSession, { body: { plan_id: 22 } });
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.payload.error, 'Workout plan not found.');
+    assert.equal(sqlCalls.length, 1);
+    assert.match(sqlCalls[0].sql, /WHERE id = \? AND user_id = \?/);
+    assert.deepEqual(sqlCalls[0].params, [22, 7]);
+}));
+
+test('session creation accepts an owned plan and stores its validated ID', async () => withQueries(async (mock) => {
+    const sqlCalls = [];
+    mock(async (sql, params) => {
+        sqlCalls.push({ sql, params });
+        if (sql.includes('FROM workout_plans')) return [[{ id: 22 }]];
+        return [{ insertId: 91 }];
+    });
+    const res = await invoke(controller.createSession, { body: { plan_id: '22' } });
+    assert.equal(res.statusCode, 201);
+    assert.deepEqual(sqlCalls[1].params, [7, 22, '']);
+}));
+
 test('finished session returns conflict and is never inserted into', async () => withQueries(async (mock) => {
     let inserts = 0;
     mock(async (sql) => {

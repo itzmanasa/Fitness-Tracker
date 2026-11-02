@@ -1,4 +1,5 @@
 const memuraiClient = require('../config/memurai');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 // All activity data comes from the wearable simulator via Memurai:
 //   stream  fittrack:sensors:{userId}                       (one entry per reading)
@@ -57,7 +58,7 @@ exports.getStatus = async (req, res) => {
         }
         res.json({ status, age_seconds: ageSeconds, server_time: new Date(now).toISOString(), latest });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'activity.getStatus');
     }
 };
 
@@ -138,7 +139,7 @@ exports.getReadings = async (req, res) => {
             states
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'activity.getReadings');
     }
 };
 
@@ -163,6 +164,6 @@ exports.getDaily = async (req, res) => {
             };
         }));
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'activity.getDaily');
     }
 };

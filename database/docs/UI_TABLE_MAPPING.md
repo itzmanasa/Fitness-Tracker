@@ -29,7 +29,7 @@ C = create, R = read, U = update, D = delete. "Redis" = Memurai.
 | Goals auto-complete when the weekly target is reached | database | trigger `trg_session_finished` (goal progress in the UI reads the same rule) |
 | Value ranges (reps, weight, height, goal target, dates) | database | `CHECK` constraints in `schema.sql` (the API also validates and returns friendly messages) |
 | No duplicate sets | database | `UNIQUE (session_id, exercise_id, set_number)` |
-| Database credentials are not in code | configuration | `.env` (`DB_*`, `DB_ADMIN_PASSWORD`, `DB_MEMBER_PASSWORD`, `REDIS_*`); `.env` is git-ignored |
+| Database credentials are not in code | configuration | `.env` for API runtime; `database/.env.bootstrap` and `database/.env.migration` for out-of-band credentials; all are git-ignored |
 
 ## Where each screen lives in the Next.js app
 

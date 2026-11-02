@@ -1,5 +1,6 @@
 const pool = require('../config/mysql');
 const memuraiClient = require('../config/memurai');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 const STATUSES = ['active', 'completed', 'overdue'];
 const isDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -95,7 +96,7 @@ exports.getGoals = async (req, res) => {
         );
         res.json(await withProgress(rows, req.user.id));
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'goals.getGoals');
     }
 };
 
@@ -109,7 +110,7 @@ exports.createGoal = async (req, res) => {
         );
         res.status(201).json({ id: result.insertId, ...out });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'goals.createGoal');
     }
 };
 
@@ -126,7 +127,7 @@ exports.updateGoal = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Goal not found' });
         res.json({ id: Number(req.params.id), ...out });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'goals.updateGoal');
     }
 };
 
@@ -136,6 +137,6 @@ exports.deleteGoal = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Goal not found' });
         res.json({ message: 'Goal deleted' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'goals.deleteGoal');
     }
 };

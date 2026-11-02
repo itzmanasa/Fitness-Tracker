@@ -136,10 +136,13 @@ Used for data that is written very often, is append-only, or has a flexible shap
 
 | Key pattern | Redis type | Written by | Example CRUD |
 |---|---|---|---|
-| `fittrack:sensors:{userId}` | Stream | wearable simulator (every 5 s) | `XADD` create, `XRANGE`/`XREVRANGE` read, `XDEL` delete |
-| `fittrack:activity:daily:{userId}:{YYYY-MM-DD}` | Hash | simulator and daily totals | `HSET`/`HINCRBY` create/update, `HGETALL` read, `HDEL` delete |
+| `fittrack:sensors:{userId}` | Stream | wearable simulator (every 5 s) | `XADD` create, `XREVRANGE` read |
+| `fittrack:activity:daily:{userId}:{YYYY-MM-DD}` | Hash | simulator and daily totals | `HINCRBY`/`HINCRBYFLOAT` create/update, `HGETALL` read |
 | `fittrack:journal:{userId}:{id}` | String (JSON) | journal page | `SET` create/update (`XX`), `GET`, `SCAN` (listing, non-blocking), `DEL` |
 | `fittrack:photos:{userId}:{id}` | String (JSON) | gallery page | `SET`, `GET`, `DEL` |
 
-Access control for Memurai/Redis: an ACL user `ft_redis_member` is limited to the `fittrack:*` keys, read and write only,
-with dangerous and admin commands removed (`database/demo/09_redis_acl.sh`).
+Access control for Memurai/Redis: `ft_redis_member` is limited to `fittrack:journal:*`, `fittrack:photos:*`,
+`fittrack:sensors:*`, and `fittrack:activity:*`, with the application command set (`GET`, `SET`, `MGET`, `DEL`, `SCAN`,
+`XADD`, `XREVRANGE`, `HGETALL`, `HINCRBY`, `HINCRBYFLOAT`, `PING`). The `default` account is disabled. The separate
+`ft_redis_recovery` account is used only for ACL inspection/modification and `CONFIG REWRITE`; its credential is stored
+outside the repository. See `database/demo/09_redis_acl.sh` for the recovery-authenticated ACL demo.

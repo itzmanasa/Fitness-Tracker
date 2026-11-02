@@ -10,19 +10,19 @@ Commands are for **Windows (cmd)**. Use `cmd /c "..."` in PowerShell so that `<`
 
 ## 1. One-time setup (before the evaluation)
 
-1. Copy `.env.example` to `.env` and fill in:
-   - `DB_PASSWORD` - your MySQL root password
-   - `DB_ADMIN_PASSWORD` and `DB_MEMBER_PASSWORD` - new passwords for the two database accounts (`ft_admin`, `ft_member`)
-   - `REDIS_MEMBER_PASSWORD` - password for the Redis member user (only for demo 9b)
-   `.env` is git-ignored. Passwords are never written into any `.sql` or `.js` file.
+1. Copy `.env.example` to `.env` and fill in runtime MySQL account credentials (`ft_member`, `ft_credential`, `ft_api_admin`), Redis settings, and application secrets.
+   Keep bootstrap credentials in `database/.env.bootstrap` and migration credentials in `database/.env.migration`; use the tracked `database/*env.example` files as templates and apply restrictive local ACLs.
+   - `REDIS_MEMBER_PASSWORD` - password for the Redis member user (demos 9 and 9b)
+   - `REDIS_RECOVERY_PASSWORD` - protected local recovery credential (demo 9b only; never commit it)
+   All credential files are git-ignored. Passwords are never written into tracked `.sql` or `.js` files.
 2. Start MySQL and Memurai.
 3. Install packages once: `npm install` in the project root, then in `backend`, `frontend` and `simulator`.
-4. Build the database:
+4. Bootstrap only a new, empty database:
    ```
    node database\setup_mysql.js
    ```
-   This creates the tables, the triggers, the procedure, the function, the views, the seed data, the database roles and the two accounts.
-   If an older `fittrack_db` exists, first run `DROP DATABASE fittrack_db;` for a clean state.
+   This creates the tables, demo rows, roles, and accounts, then creates stored objects through the bootstrap connection with the locked object definer. The script refuses to proceed if `fittrack_db` already contains objects. Never drop or reset an existing database to run this demo.
+   For an existing database, take a backup before the explicit `node database\migrate.js` schema upgrade. Backend startup performs no DDL. Stored-object recreation is a separate bootstrap DBA operation and requires its own approval and write-free window.
 5. Start the app (three terminals, from the project root):
    | Terminal | Command |
    |---|---|
@@ -30,12 +30,14 @@ Commands are for **Windows (cmd)**. Use `cmd /c "..."` in PowerShell so that `<`
    | 2 | `cd frontend` then `npm run dev` (Next.js, http://localhost:3000) |
    | 3 | `node simulator\wearableSimulator.js` |
 
+The backend CORS allowlist comes from `CORS_ORIGINS` in `.env`; use a comma-separated list of frontend origins. Local defaults allow port 3000 on `localhost` and `127.0.0.1`. Demo sign-in is disabled by default. To use the demo button during a local presentation, explicitly set `DEMO_LOGIN_ENABLED=true` in the backend `.env` and restart the backend.
+
 ### Demo accounts (passwords are stored only as bcrypt hashes)
 
 | Who | Email | Password | App role | Database account |
 |---|---|---|---|---|
 | Demo member | demo@fittrack.com | FitTrackDemo123! | member | - |
-| Admin | admin@fittrack.com | Admin@2026 | admin | `ft_admin` (password from `.env`) |
+| Admin | admin@fittrack.com | Admin@2026 | admin | `ft_admin` (password from `database/.env.bootstrap`) |
 | Member | ravi@fittrack.com | Member@2026 | member | `ft_member` (password from `.env`) |
 | Member (trigger demo) | meera@fittrack.com | Member@2026 | member | - |
 
@@ -112,20 +114,26 @@ Expected result: Demo User, average 3680 kg.
 
 ### Item 9 - Redis (Memurai) create, read, update, delete
 ```
-cmd /c "redis-cli -h 127.0.0.1 -p 6379 < database\demo\08_redis_crud.txt"
+read -rsp "Redis member password: " REDIS_MEMBER_PASSWORD
+export REDISCLI_AUTH="$REDIS_MEMBER_PASSWORD"
+printf '\n'
+redis-cli -h 127.0.0.1 -p 6379 --user ft_redis_member < database/demo/08_redis_crud.txt
+unset REDISCLI_AUTH REDIS_MEMBER_PASSWORD
 ```
-Creates a journal entry (string JSON), a daily activity hash and a sensor stream entry. Then reads, updates (`SET ... XX`, `HINCRBY`) and deletes them.
-The commands are plain lines, so you can paste them one by one.
+Uses a dedicated synthetic `acl-demo` key namespace, not a real user ID. It creates, reads and updates a journal string, daily activity hash, and sensor stream, then deletes only those three test keys. The demo uses only commands granted to `ft_redis_member`.
 
 Redis role-based access (item 9b, Git Bash):
 ```
+read -rsp "Redis recovery password: " REDIS_RECOVERY_PASSWORD
+export REDIS_RECOVERY_PASSWORD
+printf '\n'
 read -rsp "Redis member password: " REDIS_MEMBER_PASSWORD
 export REDIS_MEMBER_PASSWORD
 printf '\n'
 bash database/demo/09_redis_acl.sh
-unset REDIS_MEMBER_PASSWORD
+unset REDIS_RECOVERY_PASSWORD REDIS_MEMBER_PASSWORD
 ```
-The member user can access the FitTrack key namespaces and commands needed by the app; other key namespaces and dangerous commands are denied. The script persists the ACL in the active Redis configuration with `CONFIG REWRITE`. The backend and simulator use `REDIS_USERNAME` and `REDIS_MEMBER_PASSWORD` from `.env`.
+The recovery account is used only to configure the member ACL and persist it with `CONFIG REWRITE`. The script tests member access with an isolated journal key and cleans up only that key. It does not use the default account. The backend and simulator use `REDIS_USERNAME` and `REDIS_MEMBER_PASSWORD` from `.env`.
 
 Manual member authentication check:
 ```
@@ -133,10 +141,10 @@ redis-cli -h 127.0.0.1 -p 6379 --user ft_redis_member --askpass PING
 ```
 `--askpass` prompts for a password and ignores `REDISCLI_AUTH`; it does not load `.env`. For scripted checks, provide `REDISCLI_AUTH` through a protected process environment and omit `--askpass`. Never put a password directly in a command line.
 
-The Redis `default` account is still enabled, passwordless and unrestricted as a temporary recovery path. Restricting it is pending explicit approval; it is not a production-safe configuration.
+The Redis `default` account is disabled. The `ft_redis_recovery` credential is stored outside the repository in a protected local credential file; retrieve it from the local secure store before the ACL demo, never put it in a command argument or commit it. The member account cannot administer ACLs or access keys outside the four FitTrack application namespaces.
 
 ### Item 10 - Modifications
-The database is rebuilt in one command (`node database\setup_mysql.js`). Each part is a separate file, so changes are quick to make.
+The fresh-install database is built with `node database\setup_mysql.js`. Existing databases are migrated only through the separately reviewed migration procedure.
 
 ---
 
@@ -149,7 +157,7 @@ As the member account:
 - **allowed:** reading names and roles, reading sets, and editing its own working data
 - **denied:** `SELECT * FROM users` and `password_hash`, deleting an exercise, changing a role, calling `sp_change_role`, reading the audit log, `DROP TABLE`
 
-The two database roles are `fittrack_admin` and `fittrack_member` (`database/security/roles.sql`). The accounts are created by `database/security/create_db_accounts.js`.
+The `ft_admin`/`fittrack_admin` account remains for manual administration; `ft_member`/`fittrack_member` is the least-privilege member runtime. `ft_credential` handles registration and password hashes, `ft_api_admin` is used only after admin authorization, and `ft_migrate` is restricted to table/column DDL. Stored objects use the locked `ft_object_definer` account. `database/security/privilege_separation.sql` contains additive grants.
 
 ---
 
@@ -176,7 +184,7 @@ The two database roles are `fittrack_admin` and `fittrack_member` (`database/sec
 
 ## 5. Security notes
 
-- `.env` is git-ignored; `.env.example` holds placeholders only. The backend exits at startup if a required secret is missing.
-- Database accounts (`ft_admin`, `ft_member`) and the Redis member user take their passwords from `.env` or from your shell only.
-- Passwords in the database are bcrypt hashes. `show_users.js` shows only the first characters of the hash.
+- Runtime credential files are git-ignored; tracked examples contain placeholders only. The backend exits at startup if any runtime account secret is missing.
+- The backend and wearable simulator use only `ft_member`, `ft_credential`, and `ft_api_admin` for their respective purposes. Bootstrap and migration credentials are kept in separate local files and never loaded by backend runtime.
+- User passwords are bcrypt hashes. `show_users.js` does not query or print password hashes.
 - Row ownership (a member editing only their own rows) is enforced by the API. MySQL has no built-in row-level security.

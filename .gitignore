@@ -2,6 +2,11 @@ node_modules/
 .env
 .env.*
 !.env.example
+database/.env.bootstrap
+database/.env.migration
+database/.bootstrap-rotation.pending
+database/runtime-db.env
+database/private-backups/
 dist/
 build/
 *.log

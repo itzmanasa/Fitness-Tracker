@@ -1,5 +1,6 @@
 const memuraiClient = require('../config/memurai');
 const { scanKeys } = require('../config/scanKeys');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
 const keyFor = (userId, id) => `fittrack:journal:${userId}:${id}`;
@@ -29,7 +30,7 @@ exports.getJournals = async (req, res) => {
             
         res.json(journals);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'journals.getJournals');
     }
 };
 
@@ -51,7 +52,7 @@ exports.createJournal = async (req, res) => {
         await memuraiClient.set(journalKey, JSON.stringify(journalEntry));
         res.status(201).json(journalEntry);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'journals.createJournal');
     }
 };
 
@@ -75,7 +76,7 @@ exports.updateJournal = async (req, res) => {
         await memuraiClient.set(key, JSON.stringify(updated));
         res.json(updated);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'journals.updateJournal');
     }
 };
 
@@ -87,6 +88,6 @@ exports.deleteJournal = async (req, res) => {
         if (!removed) return res.status(404).json({ error: 'Journal entry not found' });
         res.json({ message: 'Journal entry deleted' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'journals.deleteJournal');
     }
 };

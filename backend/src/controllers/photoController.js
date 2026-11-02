@@ -1,5 +1,6 @@
 const memuraiClient = require('../config/memurai');
 const { scanKeys } = require('../config/scanKeys');
+const { respondWithServerError } = require('../utils/respondWithServerError');
 
 // Progress-photo METADATA lives in Memurai at fittrack:photos:{userId}:{photoId} (see database/README.md).
 // No image files are stored by the backend; an entry may optionally carry an http(s) image_url.
@@ -18,7 +19,7 @@ exports.getPhotos = async (req, res) => {
             .sort((a, b) => new Date(b.date || b.timestamp || 0) - new Date(a.date || a.timestamp || 0));
         res.json(photos);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'photos.getPhotos');
     }
 };
 
@@ -37,7 +38,7 @@ exports.createPhoto = async (req, res) => {
         await memuraiClient.set(keyFor(req.user.id, id), JSON.stringify(entry));
         res.status(201).json(entry);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'photos.createPhoto');
     }
 };
 
@@ -48,6 +49,6 @@ exports.deletePhoto = async (req, res) => {
         if (!removed) return res.status(404).json({ error: 'Photo not found' });
         res.json({ message: 'Photo entry deleted' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        respondWithServerError(res, error, 'photos.deletePhoto');
     }
 };
