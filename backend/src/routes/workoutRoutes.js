@@ -16,6 +16,7 @@ router.delete('/plans/:id', workoutController.deletePlan);
 router.get('/sessions', workoutController.getSessions);
 router.post('/sessions', workoutController.createSession);
 router.get('/sessions/:id', workoutController.getSession);
+router.post('/sessions/:id/sets', workoutController.createSet);
 router.put('/sessions/:id/end', workoutController.endSession);
 
 module.exports = router;

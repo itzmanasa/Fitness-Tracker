@@ -197,6 +197,62 @@ exports.getSession = async (req, res) => {
     }
 };
 
+// Logs one set into an active session. The database trigger remains the final
+// guard against a session being finished between the check and the insert.
+exports.createSet = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { exercise_id, set_number, reps, weight, completed } = req.body || {};
+    const positiveInt = (value) => Number.isInteger(value) && value > 0;
+    const validNullableInt = (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 500);
+    const validNullableWeight = (value) => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 999);
+
+    if (!positiveInt(sessionId) || !positiveInt(exercise_id) || !positiveInt(set_number) ||
+        !validNullableInt(reps) || !validNullableWeight(weight) || typeof completed !== 'boolean') {
+        return res.status(400).json({ error: 'Provide a positive session, exercise, and set number; reps (0–500), weight (0–999), and completed (boolean) are required.' });
+    }
+
+    try {
+        const [sessions] = await pool.query(
+            'SELECT id, plan_id FROM workout_sessions WHERE id = ? AND user_id = ? AND end_time IS NULL',
+            [sessionId, req.user.id]
+        );
+        if (sessions.length === 0) {
+            const [owned] = await pool.query('SELECT id, end_time FROM workout_sessions WHERE id = ? AND user_id = ?', [sessionId, req.user.id]);
+            if (owned.length === 0) return res.status(404).json({ error: 'Session not found' });
+            return res.status(409).json({ error: 'Session is already finished' });
+        }
+
+        const session = sessions[0];
+        const [exercises] = await pool.query('SELECT id FROM exercises WHERE id = ?', [exercise_id]);
+        if (exercises.length === 0) return res.status(404).json({ error: 'Exercise not found' });
+        if (session.plan_id != null) {
+            const [planned] = await pool.query(
+                'SELECT 1 FROM plan_exercises WHERE plan_id = ? AND exercise_id = ?',
+                [session.plan_id, exercise_id]
+            );
+            if (planned.length === 0) return res.status(400).json({ error: 'Exercise does not belong to this session’s workout plan' });
+        }
+
+        const [result] = await pool.query(
+            'INSERT INTO workout_sets (session_id, exercise_id, set_number, reps, weight, completed) VALUES (?, ?, ?, ?, ?, ?)',
+            [sessionId, exercise_id, set_number, reps, weight, completed]
+        );
+        const [rows] = await pool.query(
+            `SELECT ws.id, ws.session_id, ws.exercise_id, e.name AS exercise_name,
+                    ws.set_number, ws.reps, ws.weight, ws.completed
+             FROM workout_sets ws JOIN exercises e ON e.id = ws.exercise_id WHERE ws.id = ?`,
+            [result.insertId]
+        );
+        return res.status(201).json(rows[0]);
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That set number is already logged for this exercise' });
+        if (error.sqlState === '45000' || /session is already finished/i.test(error.message || '')) {
+            return res.status(409).json({ error: 'Session is already finished' });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+};
+
 exports.createSession = async (req, res) => {
     const { plan_id, notes } = req.body;
     try {

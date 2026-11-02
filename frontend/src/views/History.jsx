@@ -17,8 +17,18 @@ const PRESETS = [
     { key: '30', label: 'Last 30 days', days: 30 }
 ];
 
-function SessionDetail({ id }) {
+function SessionDetail({ id, onSetLogged }) {
     const { data, loading, error, reload } = useFetch(async () => (await api.get(`/workouts/sessions/${id}`)).data, [id]);
+    const plan = useFetch(async () => (await api.get(`/workouts/plans/${data.plan_id}`)).data, [data?.plan_id], { enabled: Boolean(data?.plan_id && !data?.end_time) });
+    const catalogue = useFetch(async () => (await api.get('/workouts/exercises')).data, [], { enabled: Boolean(data && !data.end_time && !data.plan_id) });
+    const toast = useToast();
+    const [exerciseId, setExerciseId] = useState('');
+    const [setNumber, setSetNumber] = useState('1');
+    const [reps, setReps] = useState('10');
+    const [weight, setWeight] = useState('');
+    const [completed, setCompleted] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [formError, setFormError] = useState('');
     if (loading) return <LoadingBlock rows={3} />;
     if (error) return <ErrorState message={error} onRetry={reload} compact />;
 
@@ -28,9 +38,61 @@ function SessionDetail({ id }) {
     }, {});
     const names = Object.keys(byExercise);
 
+    const exercises = data.plan_id ? (plan.data?.exercises || []) : (catalogue.data || []);
+    const logSet = async (event) => {
+        event.preventDefault();
+        const nSet = Number(setNumber);
+        const nReps = Number(reps);
+        const nWeight = weight === '' ? null : Number(weight);
+        if (!exerciseId || !Number.isInteger(nSet) || nSet < 1 || !Number.isInteger(nReps) || nReps < 0 || nReps > 500 ||
+            (nWeight !== null && (!Number.isFinite(nWeight) || nWeight < 0 || nWeight > 999))) {
+            setFormError('Choose an exercise and enter a positive set number, 0–500 reps, and a weight from 0–999.');
+            return;
+        }
+        setSaving(true);
+        setFormError('');
+        try {
+            await api.post(`/workouts/sessions/${id}/sets`, {
+                exercise_id: Number(exerciseId), set_number: nSet, reps: nReps, weight: nWeight, completed
+            });
+            toast.success('Set logged');
+            setSetNumber(String(nSet + 1));
+            await reload();
+            onSetLogged();
+        } catch (err) {
+            const message = errorMessage(err);
+            setFormError(message);
+            toast.error(message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             {data.notes && <p className="text-[13px] leading-relaxed text-text-soft"><span className="font-medium text-text">Notes: </span>{data.notes}</p>}
+            {!data.end_time && (
+                <form onSubmit={logSet} className="rounded-lg border border-line bg-surface p-3.5">
+                    <p className="mb-3 text-sm font-medium text-text">Log a set</p>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <div className="sm:col-span-2 lg:col-span-1">
+                            <label className="field-label" htmlFor={`exercise-${id}`}>Exercise</label>
+                            <select id={`exercise-${id}`} className="input" value={exerciseId} onChange={(e) => setExerciseId(e.target.value)} required>
+                                <option value="">Select exercise</option>
+                                {exercises.map((exercise) => <option key={exercise.exercise_id || exercise.id} value={exercise.exercise_id || exercise.id}>{exercise.name}</option>)}
+                            </select>
+                            {data.plan_id && plan.error && <p className="mt-1 text-xs text-coral-600">{plan.error}</p>}
+                            {!data.plan_id && catalogue.error && <p className="mt-1 text-xs text-coral-600">{catalogue.error}</p>}
+                        </div>
+                        <div><label className="field-label" htmlFor={`set-number-${id}`}>Set number</label><input id={`set-number-${id}`} className="input" type="number" min="1" step="1" value={setNumber} onChange={(e) => setSetNumber(e.target.value)} required /></div>
+                        <div><label className="field-label" htmlFor={`reps-${id}`}>Repetitions</label><input id={`reps-${id}`} className="input" type="number" min="0" max="500" step="1" value={reps} onChange={(e) => setReps(e.target.value)} required /></div>
+                        <div><label className="field-label" htmlFor={`weight-${id}`}>Weight</label><input id={`weight-${id}`} className="input" type="number" min="0" max="999" step="0.01" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="Optional" /></div>
+                        <label className="flex items-center gap-2 self-end pb-2 text-sm text-text-soft"><input type="checkbox" checked={completed} onChange={(e) => setCompleted(e.target.checked)} /> Completed</label>
+                    </div>
+                    {formError && <p role="alert" className="mt-2 text-[13px] text-coral-600">{formError}</p>}
+                    <button type="submit" className="btn btn-primary mt-3" disabled={saving || (data.plan_id ? plan.loading : catalogue.loading) || exercises.length === 0}>{saving ? 'Saving…' : 'Log set'}</button>
+                </form>
+            )}
             {names.length === 0 ? (
                 <p className="text-[13px] text-text-muted">No sets were logged for this session.</p>
             ) : (
@@ -222,7 +284,7 @@ export default function History() {
                                             </tr>
                                             {isOpen && (
                                                 <tr className="border-b border-line bg-canvas/50 last:border-0">
-                                                    <td colSpan={6} className="px-6 py-4"><SessionDetail id={s.id} /></td>
+                                                    <td colSpan={6} className="px-6 py-4"><SessionDetail id={s.id} onSetLogged={sessions.reload} /></td>
                                                 </tr>
                                             )}
                                         </Fragment>
