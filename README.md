@@ -109,6 +109,6 @@ node database\memurai_setup.js               test Memurai and write sample data
 
 | Member | SRN | Contributions |
 |---|---|---|
-| Sarthki Vachhani | PES1UG24CS422 | MySQL schema and constraints, triggers and procedure, seed data, demo scripts, Express API |
-| Sejal Siddapuram | PES1UG24CS426 | Next.js frontend, backend cleanup, documentation and project report, testing |
+| N A Manasa | PES2UG24CS291 | MySQL schema and constraints, triggers and procedure, seed data, demo scripts, Express API |
+| Maaya Mohan | PES2UG24CS254 | Next.js frontend, backend cleanup, documentation and project report, testing |
 Project report (objectives, requirements, architecture, screenshots, test results, conclusion): [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md)
